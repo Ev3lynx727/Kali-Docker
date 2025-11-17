@@ -1,0 +1,52 @@
+# Security Monitor Dockerfile
+FROM alpine:latest
+
+# Install monitoring tools
+RUN apk add --no-cache \
+    curl \
+    jq \
+    docker \
+    docker-compose \
+    net-tools \
+    procps \
+    htop \
+    && rm -rf /var/cache/apk/*
+
+# Create security check script
+RUN mkdir -p /usr/local/bin
+RUN cat > /usr/local/bin/security-check.sh << 'EOF'
+#!/bin/sh
+echo "=== Security Check ==="
+echo "Date: $(date)"
+echo ""
+
+echo "=== Running Privileged Containers ==="
+docker ps --filter "label=privileged=true" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+echo ""
+
+echo "=== Containers with Host Network ==="
+docker ps --filter "network=host" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+echo ""
+
+echo "=== Containers with Host Volumes ==="
+docker ps --format "table {{.Names}}\t{{.Mounts}}" | grep -v "none"
+echo ""
+
+echo "=== Network Interfaces ==="
+ip link show
+echo ""
+
+echo "=== Open Ports ==="
+netstat -tuln | grep LISTEN
+echo ""
+
+echo "Security check complete"
+EOF
+
+RUN chmod +x /usr/local/bin/security-check.sh
+
+# Set working directory
+WORKDIR /app
+
+# Default command - run check every 5 minutes
+CMD ["sh", "-c", "while true; do /usr/local/bin/security-check.sh; sleep 300; done"]

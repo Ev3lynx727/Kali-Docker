@@ -1,0 +1,7 @@
+# SSH Authorized Keys for Docker Host
+# Add your SSH public keys here (one per line)
+# Example:
+# ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7la5sEqBF3g... user@host
+
+# Replace this with your actual SSH public key
+# ssh-rsa YOUR_PUBLIC_KEY_HERE user@host

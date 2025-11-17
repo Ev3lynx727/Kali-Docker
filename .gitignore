@@ -1,0 +1,42 @@
+# Kali-Docker .gitignore
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+certs/
+ssl/
+
+# Logs
+*.log
+logs/
+docker-logs/
+
+# Environment files
+.env
+.env.local
+
+# Docker volumes
+volumes/
+docker-data/
+firewall-config/
+ssh-keys/
+wireguard-config/
+docker-tls-certs/
+
+# Secrets
+secrets/
+*.secret
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.swp
+*~

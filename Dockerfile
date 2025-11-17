@@ -1,0 +1,213 @@
+# Secure Docker Host with Firewalld
+# Kali Linux based secure container host with firewalld management
+FROM kalilinux/kali-rolling
+
+# Install system packages
+RUN apt update && apt install -y \
+        ca-certificates \
+        curl \
+        gnupg \
+        lsb-release \
+        firewalld \
+        iptables \
+        iproute2 \
+        net-tools \
+        wget \
+        vim \
+        htop \
+        procps \
+        systemd \
+        sudo \
+        openssh-server \
+        python3-pip \
+        && apt clean
+
+# Add Docker repository
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian bookworm stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+RUN apt update && apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+# Create docker user with sudo privileges
+RUN useradd -m -s /bin/bash -g docker docker && \
+    usermod -aG sudo docker && \
+    echo 'docker ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers.d/docker
+
+# Disable ufw and enable firewalld
+RUN systemctl disable ufw || true && \
+    apt purge -y ufw && \
+    systemctl enable firewalld
+
+# Set root password
+RUN echo 'root:kali' | chpasswd
+
+# Configure SSH for security
+RUN sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && \
+    sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+
+# Configure firewalld for Docker
+RUN mkdir -p /etc/firewalld/zones && \
+    mkdir -p /etc/firewalld/services
+
+# Create custom firewalld service for Docker
+RUN cat > /etc/firewalld/services/docker.xml << 'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<service>
+  <short>Docker</short>
+  <description>Docker container runtime</description>
+  <port protocol="tcp" port="2376"/>
+  <port protocol="tcp" port="2377"/>
+</service>
+EOF
+
+# Create secure zone configuration
+RUN cat > /etc/firewalld/zones/docker.xml << 'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="DROP">
+  <short>Docker Secure Zone</short>
+  <description>Secure zone for Docker containers with strict rules</description>
+  <service name="ssh"/>
+  <service name="docker"/>
+  <port protocol="tcp" port="80"/>
+  <port protocol="tcp" port="443"/>
+  <port protocol="tcp" port="2376"/>
+  <port protocol="tcp" port="2377"/>
+  <interface name="docker0"/>
+  <masquerade/>
+</zone>
+EOF
+
+# Configure Docker daemon for security (following firewalld best practices)
+RUN mkdir -p /etc/docker && \
+    cat > /etc/docker/daemon.json << 'EOF'
+{
+  "icc": false,
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "iptables": false,
+  "userns-remap": "default",
+  "no-new-privileges": true,
+  "live-restore": true,
+  "userland-proxy": false,
+  "bridge": "docker0"
+}
+EOF
+
+# Create Docker security scripts
+RUN mkdir -p /usr/local/bin
+
+# Docker security hardening script (following firewalld best practices)
+RUN cat > /usr/local/bin/docker-security-setup.sh << 'EOF'
+#!/bin/bash
+# Docker Security Setup Script
+# Based on: https://dev.to/soerenmetje/how-to-secure-a-docker-host-using-firewalld-2joo
+
+echo "Setting up Docker security..."
+
+# Enable firewalld
+systemctl enable firewalld
+systemctl start firewalld
+
+# Configure firewalld for Docker (following article recommendations)
+# Set default zone to public (more restrictive)
+firewall-cmd --set-default-zone=public
+
+# Add masquerading to public zone for container internet access
+firewall-cmd --permanent --zone=public --add-masquerade
+
+# Add Docker interface to trusted zone for container-to-host communication
+firewall-cmd --permanent --zone=trusted --add-interface=docker0
+
+# Add network interface to public zone for custom network internet access
+NETWORK_IFACE=$(ip route | grep default | awk '\''{print $5}'\'' | head -1)
+if [ -n "$NETWORK_IFACE" ]; then
+    firewall-cmd --permanent --zone=public --add-interface=$NETWORK_IFACE
+fi
+
+# Open specific ports in public zone
+firewall-cmd --permanent --zone=public --add-service=ssh
+firewall-cmd --permanent --zone=public --add-service=docker
+firewall-cmd --permanent --zone=public --add-port=80/tcp
+firewall-cmd --permanent --zone=public --add-port=443/tcp
+firewall-cmd --permanent --zone=public --add-port=2376/tcp
+firewall-cmd --permanent --zone=public --add-port=2377/tcp
+
+# Reload firewall rules
+firewall-cmd --reload
+
+# Docker daemon security
+systemctl enable docker
+systemctl start docker
+
+# Create Docker networks with security
+docker network create --driver bridge --internal secure-net 2>/dev/null || true
+docker network create --driver bridge --internal isolated-net 2>/dev/null || true
+
+echo "Docker security setup complete!"
+echo "⚠️  SECURITY WARNING: Masquerading may bypass access controls in services"
+echo "   See: https://www.reddit.com/r/selfhosted/comments/186bz2g/a_mailserver_incident_postmortem/"
+EOF
+
+# Container security monitoring script
+RUN cat > /usr/local/bin/docker-monitor.sh << 'EOF'
+#!/bin/bash
+# Docker Security Monitor
+
+echo "=== Docker Security Monitor ==="
+echo "Date: $(date)"
+echo ""
+
+echo "=== Running Containers ==="
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+echo ""
+
+echo "=== Docker Networks ==="
+docker network ls
+echo ""
+
+echo "=== Firewalld Status ==="
+firewall-cmd --list-all
+echo ""
+
+echo "=== Docker Images ==="
+docker images
+echo ""
+
+echo "=== Security Recommendations ==="
+echo "- Ensure containers run with --read-only flag when possible"
+echo "- Use --tmpfs for temporary data"
+echo "- Implement resource limits (--memory, --cpu-shares)"
+echo "- Regularly update base images"
+echo "- Use secrets management for sensitive data"
+echo "- Enable Docker Content Trust"
+EOF
+
+# Make scripts executable
+RUN chmod +x /usr/local/bin/docker-security-setup.sh && \
+    chmod +x /usr/local/bin/docker-monitor.sh
+
+# Create SSH keys directory
+RUN mkdir -p /home/docker/.ssh && \
+    chown docker:docker /home/docker/.ssh && \
+    chmod 700 /home/docker/.ssh
+
+# Enable and start services
+RUN systemctl enable firewalld && \
+    systemctl enable docker && \
+    systemctl enable ssh
+
+# Copy initialization script
+COPY docker-init.sh /usr/local/bin/docker-init.sh
+RUN chmod +x /usr/local/bin/docker-init.sh
+
+# Expose necessary ports
+EXPOSE 22 2376 2377
+
+# Set working directory
+WORKDIR /home/docker
+
+# Default command
+CMD ["/usr/local/bin/docker-init.sh"]

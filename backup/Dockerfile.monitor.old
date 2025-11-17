@@ -1,0 +1,81 @@
+# Security Monitor Dockerfile
+FROM alpine:latest
+
+# Install monitoring tools
+RUN apk add --no-cache \
+    docker \
+    curl \
+    jq \
+    netcat-openbsd \
+    iptables \
+    firewalld \
+    && rm -rf /var/cache/apk/*
+
+# Copy monitoring scripts
+COPY monitor-security.sh /usr/local/bin/monitor-security.sh
+RUN chmod +x /usr/local/bin/monitor-security.sh
+
+# Create monitoring script
+RUN cat > /usr/local/bin/security-check.sh << 'EOF'
+#!/bin/sh
+# Comprehensive Docker Security Check
+
+echo "=== Docker Security Audit ==="
+echo "Timestamp: $(date)"
+echo ""
+
+# Check Docker daemon security
+echo "=== Docker Daemon Configuration ==="
+docker info --format '{{.SecurityOptions}}' 2>/dev/null || echo "Unable to check daemon config"
+echo ""
+
+# Check running containers
+echo "=== Running Containers Security ==="
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" | while read line; do
+    if echo "$line" | grep -q "NAMES"; then
+        echo "$line"
+        continue
+    fi
+    container_name=$(echo "$line" | awk '{print $1}')
+    if docker inspect "$container_name" | jq -r '.HostConfig.Privileged' | grep -q true; then
+        echo "⚠️  WARNING: $container_name is running in privileged mode!"
+    fi
+done
+echo ""
+
+# Check networks
+echo "=== Network Security ==="
+docker network ls --format "table {{.Name}}\t{{.Driver}}\t{{.Scope}}"
+echo ""
+
+# Check images for vulnerabilities (basic check)
+echo "=== Image Security ==="
+docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | grep -v "REPOSITORY"
+echo ""
+
+# Firewall status
+echo "=== Firewall Status ==="
+if command -v firewall-cmd >/dev/null 2>&1; then
+    firewall-cmd --list-all 2>/dev/null || echo "Firewalld not accessible"
+else
+    echo "Firewalld not installed"
+fi
+echo ""
+
+echo "=== Security Recommendations ==="
+echo "✅ Use non-root containers"
+echo "✅ Implement resource limits"
+echo "✅ Use read-only filesystems where possible"
+echo "✅ Regularly scan images for vulnerabilities"
+echo "✅ Use secrets management"
+echo "✅ Enable audit logging"
+EOF
+
+RUN chmod +x /usr/local/bin/security-check.sh
+
+# Health check
+HEALTHCHECK --interval=300s --timeout=30s --start-period=60s --retries=3 \
+    CMD /usr/local/bin/security-check.sh > /dev/null
+
+# Default command
+CMD ["/usr/local/bin/monitor-security.sh"]

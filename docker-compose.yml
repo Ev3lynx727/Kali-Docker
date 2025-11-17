@@ -1,0 +1,180 @@
+# Secure Docker Host with Firewalld
+# Production-ready containerized Docker host with comprehensive security
+
+version: '3.8'
+
+services:
+  docker-host:
+    build: .
+    container_name: secure-docker-host
+    privileged: true
+    ports:
+      - "2222:22"      # SSH access
+      - "2376:2376"    # Docker API (TLS)
+      - "2377:2377"    # Docker Swarm
+    volumes:
+       - /var/run/docker.sock:/var/run/docker.sock
+       - docker-data:/var/lib/docker
+       - docker-config:/etc/docker
+       - firewall-config:/etc/firewalld
+       - ssh-keys:/home/docker/.ssh
+       - docker-tls-certs:/etc/docker/certs
+       - ./containers:/opt/containers:ro
+    environment:
+      - DOCKER_TLS_CERTDIR=/etc/docker/certs
+      - DOCKER_HOST=tcp://0.0.0.0:2376
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    networks:
+      - host-network
+    healthcheck:
+      test: ["CMD", "systemctl", "is-active", "firewalld"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Security monitoring container
+  security-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile.monitor
+    container_name: docker-security-monitor
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - docker-logs:/var/log/docker
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    networks:
+      - host-network
+    depends_on:
+      - docker-host
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Log aggregation container
+  log-aggregator:
+    image: fluent/fluent-bit:latest
+    container_name: docker-log-aggregator
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - docker-logs:/var/log/docker:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    ports:
+      - "24224:24224"
+    networks:
+      - host-network
+    depends_on:
+      - docker-host
+    restart: unless-stopped
+    profiles:
+      - logging
+
+  # DNS server service
+  kali-dns:
+    build: ../kali-dns
+    image: kali-dns:icebox
+    container_name: kali-dns
+    ports:
+      - "5353:53/udp"
+    networks:
+      - host-network
+    restart: unless-stopped
+    profiles:
+      - dns
+
+  # DoH server service
+  kali-web:
+    image: kali-web:latest
+    container_name: kali-web
+    expose:
+      - "80"
+    networks:
+      - host-network
+    depends_on:
+      - kali-dns
+    restart: unless-stopped
+    profiles:
+      - doh
+
+  # HAProxy ingress
+  haproxy:
+    image: haproxy:alpine
+    container_name: haproxy
+    network_mode: host
+    user: root
+    privileged: true
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ./kali-web/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./kali-web/haproxy.pem:/etc/ssl/certs/haproxy.pem:ro
+    depends_on:
+      - kali-web
+    restart: unless-stopped
+    profiles:
+      - ingress
+
+  # WireGuard VPN gateway
+  wireguard:
+    image: linuxserver/wireguard
+    container_name: kali-wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - SERVERURL=auto
+      - SERVERPORT=51820
+      - PEERS=1
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.0.0.0/24
+    volumes:
+      - wireguard-config:/config
+    ports:
+      - "51820:51820/udp"
+    networks:
+      - host-network
+    restart: unless-stopped
+    profiles:
+      - vpn
+
+volumes:
+  docker-data:
+    driver: local
+  docker-config:
+    driver: local
+  firewall-config:
+    driver: local
+  ssh-keys:
+    driver: local
+  docker-logs:
+    driver: local
+  wireguard-config:
+    driver: local
+  docker-tls-certs:
+    driver: local
+
+networks:
+  host-network:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+  secure-net:
+    driver: bridge
+    internal: true
