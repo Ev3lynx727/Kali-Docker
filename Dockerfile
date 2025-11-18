@@ -20,6 +20,7 @@ RUN apt update && apt install -y \
         sudo \
         openssh-server \
         python3-pip \
+        dnsutils \
         && apt clean
 
 # Add Docker repository

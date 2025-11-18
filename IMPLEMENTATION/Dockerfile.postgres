@@ -1,0 +1,23 @@
+# Sample Dockerfile for PostgreSQL Database in Shared-Net
+FROM postgres:15-alpine
+
+# Set environment variables
+ENV POSTGRES_DB=devdb
+ENV POSTGRES_USER=devuser
+ENV POSTGRES_PASSWORD=devpass123
+
+# Copy initialization scripts
+COPY init.sql /docker-entrypoint-initdb.d/
+
+# Copy custom configuration
+COPY postgresql.conf /etc/postgresql/postgresql.conf
+
+# Expose PostgreSQL port
+EXPOSE 5432
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+
+# Default command (inherited from base image)
+# CMD ["postgres"]

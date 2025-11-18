@@ -59,6 +59,7 @@ dig @kali-dns -p 53 example.com
 - **kali-web**: Python DoH server (HTTP 80, proxied via HAProxy)
 - **wireguard**: WireGuard VPN gateway (UDP 51820)
 - **haproxy**: HAProxy SSL ingress and load balancing (8443/8080)
+- **n8n**: n8n workflow automation (HTTPS 5678)
 
 ## Security Features
 

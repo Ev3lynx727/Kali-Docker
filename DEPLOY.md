@@ -38,9 +38,14 @@ This guide covers deploying the Kali-Docker secure container environment with DN
    ```
 
 6. **Start VPN (optional)**
-   ```bash
-   docker-compose --profile vpn up -d
-   ```
+    ```bash
+    docker-compose --profile vpn up -d
+    ```
+
+7. **Start Automation (optional)**
+    ```bash
+    docker-compose --profile automation up -d
+    ```
 
 2. **Build and start the core system**
    ```bash

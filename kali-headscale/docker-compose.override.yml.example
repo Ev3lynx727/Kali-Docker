@@ -1,0 +1,46 @@
+# Docker Compose Override Example
+# Copy this file to docker-compose.override.yml and modify as needed
+# This file will override settings in docker-compose.yml
+
+version: '3.8'
+
+services:
+  headscale:
+    # Change ports if they conflict
+    ports:
+      - "8081:80/tcp"      # Change from 80 to 8081
+      - "8080:8080/udp"    # Keep WireGuard port
+      - "9091:9090/tcp"    # Change metrics port
+
+    environment:
+      # Add custom environment variables
+      - TZ=America/New_York
+
+    volumes:
+      # Mount additional config files
+      - ./config/custom-acl.yaml:/etc/headscale/acl.yaml
+
+  headscale-ui:
+    # Change web UI ports
+    ports:
+      - "3001:8080/tcp"    # Change HTTP port (host:container)
+      - "3444:8443/tcp"    # Change HTTPS port (host:container)
+
+    environment:
+      # Custom UI settings
+      - HTTP_PORT=8080
+      - HTTPS_PORT=8443
+
+# Add additional services if needed
+# services:
+#   headscale-db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: headscale
+#       POSTGRES_USER: headscale
+#       POSTGRES_PASSWORD: your-password
+#     volumes:
+#       - headscale-db-data:/var/lib/postgresql/data
+
+# volumes:
+#   headscale-db-data:

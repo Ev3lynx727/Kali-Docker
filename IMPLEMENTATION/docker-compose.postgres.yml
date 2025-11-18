@@ -1,0 +1,36 @@
+# Docker Compose snippet for PostgreSQL database in shared-net
+# Add this to your main docker-compose.yml under services:
+
+  postgres-db:
+    build:
+      context: ./IMPLEMENTATION
+      dockerfile: Dockerfile.postgres
+    container_name: kali-postgres
+    environment:
+      - POSTGRES_DB=devdb
+      - POSTGRES_USER=devuser
+      - POSTGRES_PASSWORD=devpass123
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./IMPLEMENTATION/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    networks:
+      - shared-net
+    restart: unless-stopped
+    profiles:
+      - database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d devdb"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# Add to volumes section:
+volumes:
+  postgres-data:
+    driver: local
+
+# Add to networks section (if not exists):
+networks:
+  shared-net:
+    driver: bridge
+    internal: true

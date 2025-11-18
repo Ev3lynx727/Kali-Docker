@@ -1,0 +1,22 @@
+# Data volumes (don't commit actual data)
+headscale-data/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*.bak
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# Docker
+.dockerignore

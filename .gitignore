@@ -27,6 +27,7 @@ docker-tls-certs/
 # Secrets
 secrets/
 *.secret
+containers/secrets/*.txt
 
 # OS files
 .DS_Store
@@ -40,3 +41,7 @@ Thumbs.db
 *.tmp
 *.swp
 *~
+
+# Backup files
+*.bak
+*.bak2

@@ -1,0 +1,48 @@
+services:
+  headscale:
+    image: headscale/headscale:latest
+    ports:
+      - "80:80/tcp"
+      - "8080:8080/udp"
+      - "9090:9090/tcp"
+    volumes:
+      - ./config:/etc/headscale
+      - headscale-data:/var/lib/headscale
+    environment:
+      - HEADSCALE_CONFIG=/etc/headscale/config.yaml
+    command: serve
+    networks:
+      - host-network
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+
+  headscale-ui:
+    image: ghcr.io/gurucomputing/headscale-ui:latest
+    ports:
+      - "3000:8080/tcp"
+      - "3443:8443/tcp"
+    depends_on:
+      - headscale
+    networks:
+      - host-network
+    restart: unless-stopped
+    environment:
+      - HTTP_PORT=8080
+      - HTTPS_PORT=8443
+
+volumes:
+  headscale-data:
+    driver: local
+
+networks:
+  host-network:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.27.0.0/16
